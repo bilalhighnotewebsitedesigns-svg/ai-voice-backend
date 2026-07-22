@@ -17,6 +17,8 @@
 (function () {
   'use strict';
 
+  console.log('[voice-agent] script loaded');
+
   var script = document.currentScript;
   var API =
     (script && script.getAttribute('data-api')) ||
@@ -60,12 +62,16 @@
 
   var host = document.createElement('div');
   host.setAttribute('data-voice-agent', '');
-  host.style.cssText = 'position:fixed;z-index:2147483000;right:0;bottom:0;';
+  host.style.cssText =
+    'position:fixed !important;z-index:2147483000 !important;right:0 !important;' +
+    'bottom:0 !important;display:block !important;visibility:visible !important;' +
+    'opacity:1 !important;width:auto !important;height:auto !important;' +
+    'margin:0 !important;transform:none !important;pointer-events:auto !important;';
   var root = host.attachShadow({ mode: 'open' });
 
   root.innerHTML = [
     '<style>',
-    ':host{all:initial}',
+    ':host{all:initial;display:block}',
     '*{box-sizing:border-box;margin:0;padding:0}',
     '.wrap{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;',
     'align-items:flex-end;gap:10px;',
@@ -473,7 +479,9 @@
   idleBars();
 
   function mount() {
+    if (!document.body) return setTimeout(mount, 50);
     document.body.appendChild(host);
+    console.log('[voice-agent] widget mounted, API =', API);
     if (state.speakOnLoad) {
       addLine('bot', state.speakOnLoad);
       state.speakOnLoad = null;
