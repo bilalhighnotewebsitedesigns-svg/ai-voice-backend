@@ -8,18 +8,31 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const SYSTEM_PROMPT = `You are a smart, friendly, and helpful Voice AI Assistant embedded on a company website. You answer visitor questions, navigate the site, and perform actions like adding products to the cart, checking out, and filling forms — all from voice commands.
+// Smart Prompt for Navigation, Form Filling, and Multi-language Support
+const SYSTEM_PROMPT = `You are an interactive, smart Voice AI Assistant embedded on a website.
+Your job is to answer questions, navigate pages, fill forms, and trigger actions based on user spoken commands.
 
-KEY RESPONSIBILITIES
-1. Website knowledge and guidance: Answer using ONLY the page content provided.
-2. Language Matching: ALWAYS reply strictly in the EXACT SAME LANGUAGE and SCRIPT as the user's input message (e.g., if asked in Roman Urdu, answer in Roman Urdu; if Urdu script, answer in Urdu script; if Spanish, answer in Spanish).
-3. Keep replies very brief (1-2 sentences max), as this is read aloud. No markdown, no bullet lists.
+PAGE NAVIGATION & LINK MATCHING:
+- If the user says "go to about page", "about us kholo", "take me to contact", "contact page par jao", etc., check the provided "AVAILABLE LINKS ON PAGE" array or "PAGE CONTENT".
+- Match the intended target page URL and return action: "navigate_to_page" with the exact "url" path (e.g. "/about", "/about-us", "/contact", "/checkout").
 
-Return your response strictly in valid JSON format:
-{
-  "reply": "Your short spoken response here in the user's language",
-  "action": "none"
-}`;
+FORM FILLING & FIELD DETECTING:
+- If the user asks to fill a form field (e.g., "my name is Ali", "mera email test@gmail.com hai", "fill contact form with..."):
+  - Return action: "fill_form_field" with "field" name (e.g. "name", "email", "phone", "message") and "value".
+- If user says "submit form", "form submit kar do", or "send message":
+  - Return action: "submit_contact_form".
+
+AVAILABLE ACTIONS:
+1. {"reply": "Navigating to About page...", "action": "navigate_to_page", "url": "/about"}
+2. {"reply": "Filling your email address.", "action": "fill_form_field", "field": "email", "value": "user@example.com"}
+3. {"reply": "Submitting the form now.", "action": "submit_contact_form"}
+4. {"reply": "Adding product to cart.", "action": "add_to_cart", "product": "blue mug", "quantity": 1}
+5. {"reply": "Your short message reply here", "action": "none"}
+
+RULES:
+- Language Matching: ALWAYS reply strictly in the EXACT SAME LANGUAGE and SCRIPT as the user's input message (e.g. Roman Urdu -> Roman Urdu, English -> English, Urdu -> Urdu).
+- Keep "reply" very short (1-2 sentences max) as it will be spoken out loud. No markdown, no bullet points.
+- ALWAYS return response strictly in valid JSON format.`;
 
 app.post('/api/chat', async (req, res) => {
   try {
@@ -34,7 +47,7 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    const { message, currentUrl, pageText } = req.body || {};
+    const { message, currentUrl, pageText, links } = req.body || {};
 
     if (!message || !String(message).trim()) {
       return res.status(400).json({ reply: 'I did not catch that.', action: 'none' });
@@ -44,9 +57,11 @@ app.post('/api/chat', async (req, res) => {
       .replace(/\s+/g, ' ')
       .slice(0, 4000);
 
-    const promptText = `${SYSTEM_PROMPT}\n\nCURRENT PAGE: ${currentUrl}\nPAGE CONTENT: ${cleanContext}\n\nUSER SAID: "${message}"`;
+    const linksList = JSON.stringify(links || []);
 
-    // 1. Fetch AI Text Response from Groq
+    const promptText = `${SYSTEM_PROMPT}\n\nCURRENT PAGE: ${currentUrl}\nAVAILABLE LINKS ON PAGE: ${linksList}\nPAGE CONTENT: ${cleanContext}\n\nUSER SAID: "${message}"`;
+
+    // 1. Fetch AI Response & Action Decision from Groq AI
     const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -78,7 +93,7 @@ app.post('/api/chat', async (req, res) => {
 
     let audioBase64 = null;
 
-    // 2. Fetch Human Voice Audio from ElevenLabs API
+    // 2. Fetch HD Real Human Voice from ElevenLabs API
     if (elevenApiKey && parsed.reply) {
       try {
         const elevenRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
@@ -90,7 +105,7 @@ app.post('/api/chat', async (req, res) => {
           },
           body: JSON.stringify({
             text: parsed.reply,
-            model_id: 'eleven_multilingual_v2', // Supports English, Urdu, Hindi, Spanish, etc.
+            model_id: 'eleven_multilingual_v2',
             voice_settings: { stability: 0.5, similarity_boost: 0.75 }
           })
         });
@@ -110,6 +125,11 @@ app.post('/api/chat', async (req, res) => {
     return res.status(200).json({
       reply: parsed.reply,
       action: parsed.action || 'none',
+      url: parsed.url || null,
+      field: parsed.field || null,
+      value: parsed.value || null,
+      product: parsed.product || null,
+      quantity: parsed.quantity || 1,
       audio: audioBase64
     });
 
