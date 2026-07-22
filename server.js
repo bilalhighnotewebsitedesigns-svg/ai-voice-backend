@@ -38,6 +38,7 @@ app.post('/api/chat', async (req, res) => {
   try {
     const groqApiKey = process.env.GROQ_API_KEY;
     const elevenApiKey = process.env.ELEVENLABS_API_KEY;
+    // Default to '21m00Tcm4TlvDq8ikWAM' (Rachel - ultra realistic) if custom voice ID fails
     const voiceId = process.env.ELEVENLABS_VOICE_ID || 'eXpIbVcVbLo8ZJQDlDnl';
 
     if (!groqApiKey) {
@@ -93,29 +94,42 @@ app.post('/api/chat', async (req, res) => {
 
     let audioBase64 = null;
 
-    // 2. Fetch HD Real Human Voice from ElevenLabs API
+    // 2. Helper function to call ElevenLabs API
+    async function fetchElevenLabsAudio(selectedVoice) {
+      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${selectedVoice}`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'audio/mpeg',
+          'Content-Type': 'application/json',
+          'xi-api-key': elevenApiKey
+        },
+        body: JSON.stringify({
+          text: parsed.reply,
+          model_id: 'eleven_multilingual_v2',
+          voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+        })
+      });
+      return response;
+    }
+
+    // 3. Fetch HD Real Human Voice from ElevenLabs API
     if (elevenApiKey && parsed.reply) {
       try {
-        const elevenRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-          method: 'POST',
-          headers: {
-            'Accept': 'audio/mpeg',
-            'Content-Type': 'application/json',
-            'xi-api-key': elevenApiKey
-          },
-          body: JSON.stringify({
-            text: parsed.reply,
-            model_id: 'eleven_multilingual_v2',
-            voice_settings: { stability: 0.5, similarity_boost: 0.75 }
-          })
-        });
+        let elevenRes = await fetchElevenLabsAudio(voiceId);
+
+        // Fallback to standard Rachel voice if custom voice ID is not added to Voice Lab
+        if (!elevenRes.ok && voiceId !== '21m00Tcm4TlvDq8ikWAM') {
+          console.warn(`Voice ID ${voiceId} failed. Retrying with default Rachel voice...`);
+          elevenRes = await fetchElevenLabsAudio('21m00Tcm4TlvDq8ikWAM');
+        }
 
         if (elevenRes.ok) {
           const audioBuffer = await elevenRes.arrayBuffer();
           audioBase64 = Buffer.from(audioBuffer).toString('base64');
+          console.log('ElevenLabs audio successfully generated.');
         } else {
           const errText = await elevenRes.text();
-          console.error('ElevenLabs Error Response:', errText);
+          console.error('ElevenLabs Error:', errText);
         }
       } catch (err) {
         console.error('ElevenLabs Exception:', err);
