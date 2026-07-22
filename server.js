@@ -18,7 +18,7 @@ KEY RESPONSIBILITIES
 Return your response strictly in valid JSON format:
 {
   "reply": "Your short spoken response here",
-  "action": "none" // options: none, navigate_to_page, add_to_cart, proceed_to_checkout, fill_form_field, submit_contact_form
+  "action": "none"
 }`;
 
 app.post('/api/chat', async (req, res) => {
@@ -32,7 +32,7 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    const { message, currentUrl, pageText, links = [] } = req.body || {};
+    const { message, currentUrl, pageText } = req.body || {};
 
     if (!message || !String(message).trim()) {
       return res.status(400).json({ reply: 'I did not catch that.', action: 'none' });
@@ -44,8 +44,8 @@ app.post('/api/chat', async (req, res) => {
 
     const promptText = `${SYSTEM_PROMPT}\n\nCURRENT PAGE: ${currentUrl}\nPAGE CONTENT: ${cleanContext}\n\nUSER SAID: "${message}"`;
 
-    // Direct fetch using official gemini-1.5-flash / gemini-2.0-flash endpoint
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // Updated API Endpoint using v1 and gemini-2.0-flash
+    const endpoint = `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
     const response = await fetch(endpoint, {
       method: 'POST',
