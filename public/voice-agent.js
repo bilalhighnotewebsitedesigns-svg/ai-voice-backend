@@ -98,7 +98,6 @@
     '.btn:focus-visible{outline:2px solid #2FD6C3;outline-offset:3px}',
     '.btn.live{border-color:#2FD6C3;background:#16232B}',
     '.btn[disabled]{opacity:.55;cursor:default}',
-    // signature element: bars driven by real mic amplitude, not a generic pulse
     '.viz{display:flex;align-items:center;gap:2.5px;height:20px;width:26px}',
     '.viz i{display:block;width:3px;height:4px;border-radius:2px;background:#8A9AAB;',
     'transition:height .07s linear,background .18s ease}',
@@ -193,17 +192,54 @@
     idleBars();
   }
 
-  /* ---------- speech output ---------- */
+  /* ---------- speech output (UPDATED FOR NATURAL FEMALE VOICE) ---------- */
+
+  function getFemaleVoice() {
+    if (!('speechSynthesis' in window)) return null;
+    var voices = window.speechSynthesis.getVoices();
+    if (!voices || voices.length === 0) return null;
+
+    // Natural & High Quality Female voice priorities
+    return voices.find(function (v) {
+      var name = v.name || '';
+      return (
+        name.indexOf('Google US English') !== -1 ||
+        name.indexOf('Natural') !== -1 ||
+        name.indexOf('Jenny') !== -1 ||
+        name.indexOf('Samantha') !== -1 ||
+        name.indexOf('Zira') !== -1 ||
+        name.indexOf('Victoria') !== -1 ||
+        name.indexOf('Female') !== -1
+      );
+    }) || voices.find(function (v) { return (v.lang || '').indexOf('en') === 0; }) || voices[0];
+  }
 
   function speak(text, done) {
     if (!('speechSynthesis' in window) || !text) return done && done();
     window.speechSynthesis.cancel();
+
     var u = new SpeechSynthesisUtterance(text);
     u.lang = LANG;
-    u.rate = 1.03;
+    u.rate = 0.95;   // Slightly natural, clear pacing
+    u.pitch = 1.1;  // Female natural tone pitch
+
+    var selectedVoice = getFemaleVoice();
+    if (selectedVoice) {
+      u.voice = selectedVoice;
+    }
+
     u.onend = function () { done && done(); };
     u.onerror = function () { done && done(); };
-    window.speechSynthesis.speak(u);
+
+    // Chrome async voice loading safety
+    if (window.speechSynthesis.getVoices().length === 0) {
+      window.speechSynthesis.onvoiceschanged = function () {
+        u.voice = getFemaleVoice() || u.voice;
+        window.speechSynthesis.speak(u);
+      };
+    } else {
+      window.speechSynthesis.speak(u);
+    }
   }
 
   /* ---------- page context sent to the backend ---------- */
@@ -290,7 +326,6 @@
       if (!fallback) fallback = b;
       if (!needle) continue;
 
-      // Prefer the button inside the card that mentions this product
       var card = b.closest('[data-product],article,li,.product,.card,form,div');
       for (var hops = 0; card && hops < 4; hops++) {
         if ((card.innerText || '').toLowerCase().indexOf(needle) !== -1) return b;
