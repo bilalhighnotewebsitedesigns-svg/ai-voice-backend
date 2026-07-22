@@ -8,11 +8,11 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Corrected & Active Google Gemini Model Identifiers
+// Updated with supported Gemini 2.0 and Flash models
 const MODEL_CHAIN = (process.env.GEMINI_MODEL
   ? [process.env.GEMINI_MODEL]
   : []
-).concat(['gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-1.5-pro']);
+).concat(['gemini-2.0-flash', 'gemini-2.0-flash-lite']);
 
 const SYSTEM_PROMPT = `You are a smart, friendly, and helpful Voice AI Assistant embedded on a company website. You answer visitor questions, navigate the site, and perform actions like adding products to the cart, checking out, and filling forms — all from voice commands.
 
@@ -92,8 +92,8 @@ async function callGemini(apiKey, payload) {
 
     if (data.error) {
       lastError = `${model}: ${data.error.message}`;
-      if (response.status === 404) continue;
-      return { error: lastError };
+      // Continue loop if model is not found or unsupported
+      continue;
     }
 
     return { data, model };
@@ -163,15 +163,14 @@ USER SAID: "${message}"`;
 
     const result = await callGemini(apiKey, payload);
 
-// ✅ DEBUG CODE (Exact Error Dekhne Ke Liye):
-if (result.error) {
-  console.error('Gemini error:', result.error);
-  return res.status(200).json({
-    reply: `Error: ${result.error}`,
-    action: 'none',
-    debug: result.error,
-  });
-}
+    if (result.error) {
+      console.error('Gemini error:', result.error);
+      return res.status(200).json({
+        reply: 'I am having trouble reaching my brain right now. Please try again.',
+        action: 'none',
+        debug: result.error,
+      });
+    }
 
     const rawOutput =
       result.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
