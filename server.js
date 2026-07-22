@@ -1,72 +1,54 @@
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
-const cheerio = require('cheerio');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Large page text support
 
-// Check if API key exists
 const apiKey = process.env.GEMINI_API_KEY;
 const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
-
-// Safe Scraping
-async function extractPageText(url) {
-    try {
-        const { data } = await axios.get(url, { 
-            headers: { 
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' 
-            },
-            timeout: 5000 
-        });
-        const $ = cheerio.load(data);
-        $('script, style, iframe, svg, noscript').remove();
-        const text = $('body').text().replace(/\s+/g, ' ').trim();
-        return text.length > 0 ? text.slice(0, 5000) : "General Salvador project testing page.";
-    } catch (error) {
-        console.error("Scraping fallback triggered:", error.message);
-        return "This is the Salvador testing website page.";
-    }
-}
 
 app.post('/api/chat', async (req, res) => {
     try {
         if (!genAI) {
-            return res.status(500).json({ reply: "API Key is missing in Vercel settings.", action: "none" });
+            return res.status(500).json({ reply: "API Key Vercel settings mein missing hai.", action: "none" });
         }
 
-        const { message, currentUrl } = req.body;
-        const pageContent = await extractPageText(currentUrl || "");
+        const { message, currentUrl, pageText } = req.body;
 
-        // Try gemini-1.5-flash or fallback
-        let model;
-        try {
-            model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        } catch (e) {
-            model = genAI.getGenerativeModel({ model: "gemini-pro" });
-        }
+        // Clean page text to keep under context limit
+        const cleanContext = (pageText || "No context provided").replace(/\s+/g, ' ').slice(0, 8000);
+
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         const prompt = `
-You are an AI Voice Assistant for the website at ${currentUrl}.
-Page text content: "${pageContent}"
+You are a helpful Voice AI Assistant for the website at: ${currentUrl}
 
-User asked: "${message}"
+Website Content:
+"${cleanContext}"
 
-Respond strictly in JSON format without markdown ticks:
+User Question: "${message}"
+
+INSTRUCTIONS:
+1. Answer the user's question accurately using ONLY the Website Content above.
+2. Keep the answer concise (1-2 short sentences) so it sounds natural when spoken aloud.
+3. If the user asks to open/visit a page (e.g., About Us, Contact, Portfolio), return action as "navigate" with the relative URL.
+4. Respond STRICTLY in raw JSON without any markdown formatting or code blocks.
+
+JSON Output Format:
 {
-  "reply": "Your short 1-2 sentence answer based on website content.",
+  "reply": "Your short answer here.",
   "action": "navigate" OR "none",
-  "url": "/page-path" OR null
+  "url": "/page-link" OR null
 }
 `;
 
         const result = await model.generateContent(prompt);
         let rawText = result.response.text().trim();
-        
-        // Remove markdown formatting if generated
+
+        // Clean markdown backticks if Gemini adds them
         rawText = rawText.replace(/```json/gi, '').replace(/```/gi, '').trim();
 
         let jsonResponse;
@@ -82,9 +64,9 @@ Respond strictly in JSON format without markdown ticks:
         return res.json(jsonResponse);
 
     } catch (err) {
-        console.error("Backend Error Details:", err.message);
-        return res.json({ 
-            reply: "I am having trouble reading this page details right now, but feel free to ask another question!", 
+        console.error("Backend Error:", err);
+        return res.status(500).json({ 
+            reply: "Main is waqt is page ki details parh nahi pa raha, aap dobara poochain.", 
             action: "none" 
         });
     }
