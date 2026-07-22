@@ -11,9 +11,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 const SYSTEM_PROMPT = `You are a smart, friendly, and helpful Voice AI Assistant embedded on a company website. You answer visitor questions, navigate the site, and perform actions like adding products to the cart, checking out, and filling forms — all from voice commands.
 
 KEY RESPONSIBILITIES
-1. Website knowledge and guidance: Answer using ONLY the page content provided. Never invent facts.
-2. Navigation: Suggest relative links from provided list.
-3. Keep replies very brief (1-2 sentences max), as this is read aloud. No markdown, no bullet lists.
+1. Website knowledge and guidance: Answer using ONLY the page content provided.
+2. Keep replies very brief (1-2 sentences max), as this is read aloud. No markdown, no bullet lists.
 
 Return your response strictly in valid JSON format:
 {
@@ -23,11 +22,11 @@ Return your response strictly in valid JSON format:
 
 app.post('/api/chat', async (req, res) => {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GROQ_API_KEY;
 
     if (!apiKey) {
       return res.status(200).json({
-        reply: 'The assistant is not configured yet. Please add the API key.',
+        reply: 'GROQ_API_KEY is missing in Vercel environment variables.',
         action: 'none'
       });
     }
@@ -44,33 +43,34 @@ app.post('/api/chat', async (req, res) => {
 
     const promptText = `${SYSTEM_PROMPT}\n\nCURRENT PAGE: ${currentUrl}\nPAGE CONTENT: ${cleanContext}\n\nUSER SAID: "${message}"`;
 
-    // Updated API Endpoint using v1 and gemini-2.0-flash
-    const endpoint = `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-    const response = await fetch(endpoint, {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: promptText }] }]
+        model: 'llama-3.1-8b-instant',
+        messages: [{ role: 'user', content: promptText }],
+        response_format: { type: 'json_object' }
       }),
     });
 
     const data = await response.json();
 
     if (data.error) {
-      console.error('Gemini API Error:', data.error);
+      console.error('Groq API Error:', data.error);
       return res.status(200).json({
         reply: `API Error: ${data.error.message}`,
         action: 'none'
       });
     }
 
-    const rawOutput = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    const rawOutput = data.choices?.[0]?.message?.content?.trim() || '';
 
     let parsed;
     try {
-      const cleanJson = rawOutput.replace(/^```json/i, '').replace(/```$/, '').trim();
-      parsed = JSON.parse(cleanJson);
+      parsed = JSON.parse(rawOutput);
     } catch (e) {
       parsed = { reply: rawOutput.slice(0, 200) || 'I am ready to help!', action: 'none' };
     }
@@ -89,7 +89,7 @@ app.post('/api/chat', async (req, res) => {
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    apiKeyConfigured: Boolean(process.env.GEMINI_API_KEY),
+    apiKeyConfigured: Boolean(process.env.GROQ_API_KEY),
     time: new Date().toISOString(),
   });
 });
