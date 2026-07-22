@@ -23,11 +23,13 @@ Return your response strictly in valid JSON format:
 
 app.post('/api/chat', async (req, res) => {
   try {
-    const apiKey = process.env.GROQ_API_KEY;
+    const groqApiKey = process.env.GROQ_API_KEY;
+    const elevenApiKey = process.env.ELEVENLABS_API_KEY;
+    const voiceId = process.env.ELEVENLABS_VOICE_ID || 'eXpIbVcVbLo8ZJQDlDnl';
 
-    if (!apiKey) {
+    if (!groqApiKey) {
       return res.status(200).json({
-        reply: 'GROQ_API_KEY is missing in Vercel environment variables.',
+        reply: 'GROQ_API_KEY is missing in environment variables.',
         action: 'none'
       });
     }
@@ -44,11 +46,12 @@ app.post('/api/chat', async (req, res) => {
 
     const promptText = `${SYSTEM_PROMPT}\n\nCURRENT PAGE: ${currentUrl}\nPAGE CONTENT: ${cleanContext}\n\nUSER SAID: "${message}"`;
 
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    // 1. Fetch AI Text Response from Groq
+    const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': `Bearer ${groqApiKey}`
       },
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',
@@ -57,14 +60,11 @@ app.post('/api/chat', async (req, res) => {
       }),
     });
 
-    const data = await response.json();
+    const data = await groqResponse.json();
 
     if (data.error) {
       console.error('Groq API Error:', data.error);
-      return res.status(200).json({
-        reply: `API Error: ${data.error.message}`,
-        action: 'none'
-      });
+      return res.status(200).json({ reply: `API Error: ${data.error.message}`, action: 'none' });
     }
 
     const rawOutput = data.choices?.[0]?.message?.content?.trim() || '';
@@ -76,21 +76,54 @@ app.post('/api/chat', async (req, res) => {
       parsed = { reply: rawOutput.slice(0, 200) || 'I am ready to help!', action: 'none' };
     }
 
-    return res.status(200).json(parsed);
+    let audioBase64 = null;
+
+    // 2. Fetch Human Voice Audio from ElevenLabs API
+    if (elevenApiKey && parsed.reply) {
+      try {
+        const elevenRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+          method: 'POST',
+          headers: {
+            'Accept': 'audio/mpeg',
+            'Content-Type': 'application/json',
+            'xi-api-key': elevenApiKey
+          },
+          body: JSON.stringify({
+            text: parsed.reply,
+            model_id: 'eleven_multilingual_v2', // Supports English, Urdu, Hindi, Spanish, etc.
+            voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+          })
+        });
+
+        if (elevenRes.ok) {
+          const audioBuffer = await elevenRes.arrayBuffer();
+          audioBase64 = Buffer.from(audioBuffer).toString('base64');
+        } else {
+          const errText = await elevenRes.text();
+          console.error('ElevenLabs Error Response:', errText);
+        }
+      } catch (err) {
+        console.error('ElevenLabs Exception:', err);
+      }
+    }
+
+    return res.status(200).json({
+      reply: parsed.reply,
+      action: parsed.action || 'none',
+      audio: audioBase64
+    });
 
   } catch (err) {
     console.error('Backend crash:', err);
-    return res.status(200).json({
-      reply: `Server Exception: ${err.message}`,
-      action: 'none'
-    });
+    return res.status(200).json({ reply: `Server Exception: ${err.message}`, action: 'none' });
   }
 });
 
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    apiKeyConfigured: Boolean(process.env.GROQ_API_KEY),
+    groqKeyConfigured: Boolean(process.env.GROQ_API_KEY),
+    elevenLabsKeyConfigured: Boolean(process.env.ELEVENLABS_API_KEY),
     time: new Date().toISOString(),
   });
 });

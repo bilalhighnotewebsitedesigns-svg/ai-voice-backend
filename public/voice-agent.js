@@ -1,18 +1,5 @@
 /*
- * Voice AI Assistant - drop-in widget
- *
- * Usage on any page:
- *   <script src="https://YOUR-APP.vercel.app/voice-agent.js"
- *           data-api="https://YOUR-APP.vercel.app/api/chat"
- *           data-lang="en-US"></script>
- *
- * Optional site-specific overrides (define BEFORE the script tag):
- *   window.VoiceAgentHooks = {
- *     addToCart(product, quantity) { ... return true if handled },
- *     checkout() { ... },
- *     fillField(field, value) { ... },
- *     submitForm() { ... }
- *   };
+ * Voice AI Assistant - ElevenLabs HD Human Voice Supported Drop-in Widget
  */
 (function () {
   'use strict';
@@ -192,53 +179,32 @@
     idleBars();
   }
 
-  /* ---------- speech output (UPDATED FOR NATURAL FEMALE VOICE) ---------- */
+  /* ---------- speech output (ElevenLabs HD Audio + Fallback) ---------- */
 
-  function getFemaleVoice() {
-    if (!('speechSynthesis' in window)) return null;
-    var voices = window.speechSynthesis.getVoices();
-    if (!voices || voices.length === 0) return null;
-
-    // Natural & High Quality Female voice priorities
-    return voices.find(function (v) {
-      var name = v.name || '';
-      return (
-        name.indexOf('Google US English') !== -1 ||
-        name.indexOf('Natural') !== -1 ||
-        name.indexOf('Jenny') !== -1 ||
-        name.indexOf('Samantha') !== -1 ||
-        name.indexOf('Zira') !== -1 ||
-        name.indexOf('Victoria') !== -1 ||
-        name.indexOf('Female') !== -1
-      );
-    }) || voices.find(function (v) { return (v.lang || '').indexOf('en') === 0; }) || voices[0];
-  }
-
-  function speak(text, done) {
+  function fallbackSpeak(text, done) {
     if (!('speechSynthesis' in window) || !text) return done && done();
     window.speechSynthesis.cancel();
-
     var u = new SpeechSynthesisUtterance(text);
     u.lang = LANG;
-    u.rate = 0.95;   // Slightly natural, clear pacing
-    u.pitch = 1.1;  // Female natural tone pitch
-
-    var selectedVoice = getFemaleVoice();
-    if (selectedVoice) {
-      u.voice = selectedVoice;
-    }
-
+    u.rate = 0.95;
+    u.pitch = 1.1;
     u.onend = function () { done && done(); };
     u.onerror = function () { done && done(); };
+    window.speechSynthesis.speak(u);
+  }
 
-    // Chrome async voice loading safety
-    if (window.speechSynthesis.getVoices().length === 0) {
-      window.speechSynthesis.onvoiceschanged = function () {
-        u.voice = getFemaleVoice() || u.voice;
-        window.speechSynthesis.speak(u);
-      };
+  function speak(audioBase64, text, done) {
+    if (audioBase64) {
+      try {
+        var audio = new Audio("data:audio/mpeg;base64," + audioBase64);
+        audio.onended = function () { done && done(); };
+        audio.onerror = function () { fallbackSpeak(text, done); };
+        audio.play().catch(function () { fallbackSpeak(text, done); });
+      } catch (e) {
+        fallbackSpeak(text, done);
+      }
     } else {
-      window.speechSynthesis.speak(u);
+      fallbackSpeak(text, done);
     }
   }
 
@@ -422,7 +388,7 @@
         state.history.push({ role: 'assistant', text: reply });
         saveState();
         setStatus(res.action && res.action !== 'none' ? res.action : 'Ready');
-        speak(reply, function () { runAction(res); });
+        speak(res.audio, reply, function () { runAction(res); });
         if (res.action === 'navigate_to_page') runAction(res);
       })
       .catch(function (err) {
