@@ -181,6 +181,8 @@
 
   /* ---------- speech output (ElevenLabs HD Audio + Fallback) ---------- */
 
+ /* ---------- speech output (ElevenLabs HD Audio + Autoplay Safety) ---------- */
+
   function fallbackSpeak(text, done) {
     if (!('speechSynthesis' in window) || !text) return done && done();
     window.speechSynthesis.cancel();
@@ -197,13 +199,31 @@
     if (audioBase64) {
       try {
         var audio = new Audio("data:audio/mpeg;base64," + audioBase64);
-        audio.onended = function () { done && done(); };
-        audio.onerror = function () { fallbackSpeak(text, done); };
-        audio.play().catch(function () { fallbackSpeak(text, done); });
+        
+        audio.onended = function () { 
+          console.log('[voice-agent] ElevenLabs playback finished');
+          done && done(); 
+        };
+
+        audio.onerror = function (e) {
+          console.warn('[voice-agent] ElevenLabs audio element error, falling back:', e);
+          fallbackSpeak(text, done);
+        };
+
+        var playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(function (error) {
+            console.warn('[voice-agent] Autoplay blocked or audio error:', error);
+            // Fallback to browser voice if autoplay was blocked
+            fallbackSpeak(text, done);
+          });
+        }
       } catch (e) {
+        console.error('[voice-agent] Exception playing audio:', e);
         fallbackSpeak(text, done);
       }
     } else {
+      console.log('[voice-agent] No base64 audio returned from backend, using fallback TTS.');
       fallbackSpeak(text, done);
     }
   }
