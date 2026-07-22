@@ -8,12 +8,11 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Model fallback chain. Gemini 1.5 and 2.0 are fully shut down and return 404,
-// so we start at 3.5-flash and walk down if a model ID ever disappears again.
+// Updated model fallback chain with valid Gemini models
 const MODEL_CHAIN = (process.env.GEMINI_MODEL
   ? [process.env.GEMINI_MODEL]
   : []
-).concat(['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest']);
+).concat(['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']);
 
 const SYSTEM_PROMPT = `You are a smart, friendly, and helpful Voice AI Assistant embedded on a company website. You answer visitor questions, navigate the site, and perform actions like adding products to the cart, checking out, and filling forms — all from voice commands.
 
@@ -210,8 +209,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Vercel runs this as a serverless function and imports the exported handler.
-// app.listen() only runs locally.
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
