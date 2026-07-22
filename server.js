@@ -163,14 +163,15 @@ USER SAID: "${message}"`;
 
     const result = await callGemini(apiKey, payload);
 
-    if (result.error) {
-      console.error('Gemini error:', result.error);
-      return res.status(200).json({
-        reply: 'I am having trouble reaching my brain right now. Please try again.',
-        action: 'none',
-        debug: result.error,
-      });
-    }
+// ✅ DEBUG CODE (Exact Error Dekhne Ke Liye):
+if (result.error) {
+  console.error('Gemini error:', result.error);
+  return res.status(200).json({
+    reply: `Error: ${result.error}`,
+    action: 'none',
+    debug: result.error,
+  });
+}
 
     const rawOutput =
       result.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
