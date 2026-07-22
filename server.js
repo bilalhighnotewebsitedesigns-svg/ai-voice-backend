@@ -9,77 +9,72 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Check if API key exists
+const apiKey = process.env.GEMINI_API_KEY;
+const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 
-// Web Scraping with Error Handling & Timeout
+// Safe Scraping
 async function extractPageText(url) {
     try {
         const { data } = await axios.get(url, { 
             headers: { 
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' 
             },
-            timeout: 8000 // 8 seconds timeout
+            timeout: 5000 
         });
         const $ = cheerio.load(data);
-        
         $('script, style, iframe, svg, noscript').remove();
-        
-        const extractedText = $('body').text().replace(/\s+/g, ' ').trim();
-        return extractedText.length > 0 ? extractedText.slice(0, 6000) : "No text content found on this page.";
+        const text = $('body').text().replace(/\s+/g, ' ').trim();
+        return text.length > 0 ? text.slice(0, 5000) : "General Salvador project testing page.";
     } catch (error) {
-        console.error("Scraping error:", error.message);
-        return "Could not fetch live page content automatically.";
+        console.error("Scraping fallback triggered:", error.message);
+        return "This is the Salvador testing website page.";
     }
 }
 
 app.post('/api/chat', async (req, res) => {
     try {
-        const { message, currentUrl } = req.body;
-
-        if (!message) {
-            return res.status(400).json({ reply: "Please ask a valid question.", action: "none" });
+        if (!genAI) {
+            return res.status(500).json({ reply: "API Key is missing in Vercel settings.", action: "none" });
         }
 
-        // Live content extract karna
-        const pageContent = await extractPageText(currentUrl);
+        const { message, currentUrl } = req.body;
+        const pageContent = await extractPageText(currentUrl || "");
 
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        // Try gemini-1.5-flash or fallback
+        let model;
+        try {
+            model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        } catch (e) {
+            model = genAI.getGenerativeModel({ model: "gemini-pro" });
+        }
 
         const prompt = `
-You are a helpful AI Voice Assistant on the website page: ${currentUrl}
+You are an AI Voice Assistant for the website at ${currentUrl}.
+Page text content: "${pageContent}"
 
-Page Text Content:
-"${pageContent}"
+User asked: "${message}"
 
-User Query: "${message}"
-
-INSTRUCTIONS:
-1. Answer the user's query accurately based on the page content provided above.
-2. If the query asks to navigate to another page (e.g., About, Contact, Services), provide the route/url.
-3. Keep the "reply" short (1-2 sentences) so it sounds natural when spoken aloud.
-4. Respond ONLY with a valid raw JSON object (NO markdown ticks, NO \`\`\`json wrappers).
-
-JSON Structure:
+Respond strictly in JSON format without markdown ticks:
 {
-  "reply": "Your concise response here.",
+  "reply": "Your short 1-2 sentence answer based on website content.",
   "action": "navigate" OR "none",
-  "url": "/page-link" OR null
+  "url": "/page-path" OR null
 }
 `;
 
         const result = await model.generateContent(prompt);
         let rawText = result.response.text().trim();
-
-        // Clean markdown backticks if present
-        rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        
+        // Remove markdown formatting if generated
+        rawText = rawText.replace(/```json/gi, '').replace(/```/gi, '').trim();
 
         let jsonResponse;
         try {
             jsonResponse = JSON.parse(rawText);
-        } catch (parseErr) {
-            console.error("JSON Parsing failed. Raw AI output:", rawText);
+        } catch (pErr) {
             jsonResponse = {
-                reply: rawText.replace(/["{}]/g, '').slice(0, 150),
+                reply: rawText.replace(/[{}]/g, '').slice(0, 150),
                 action: "none"
             };
         }
@@ -87,8 +82,11 @@ JSON Structure:
         return res.json(jsonResponse);
 
     } catch (err) {
-        console.error("API Error:", err);
-        return res.status(500).json({ reply: "Sorry, I had trouble processing that request.", action: "none" });
+        console.error("Backend Error Details:", err.message);
+        return res.json({ 
+            reply: "I am having trouble reading this page details right now, but feel free to ask another question!", 
+            action: "none" 
+        });
     }
 });
 
