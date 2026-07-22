@@ -8,11 +8,11 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Updated model fallback chain with valid Gemini models
+// Corrected & Active Google Gemini Model Identifiers
 const MODEL_CHAIN = (process.env.GEMINI_MODEL
   ? [process.env.GEMINI_MODEL]
   : []
-).concat(['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']);
+).concat(['gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-1.5-pro']);
 
 const SYSTEM_PROMPT = `You are a smart, friendly, and helpful Voice AI Assistant embedded on a company website. You answer visitor questions, navigate the site, and perform actions like adding products to the cart, checking out, and filling forms — all from voice commands.
 
@@ -92,8 +92,6 @@ async function callGemini(apiKey, payload) {
 
     if (data.error) {
       lastError = `${model}: ${data.error.message}`;
-      // 404 / NOT_FOUND means the model ID is retired - try the next one.
-      // Anything else (bad key, quota) will fail on every model, so stop.
       if (response.status === 404) continue;
       return { error: lastError };
     }
@@ -142,7 +140,6 @@ ${cleanContext}
 
 USER SAID: "${message}"`;
 
-    // Prior turns keep multi-step form filling coherent across requests.
     const contents = [];
     for (const turn of history.slice(-12)) {
       if (!turn || !turn.text) continue;
@@ -199,7 +196,6 @@ USER SAID: "${message}"`;
   }
 });
 
-// Open this in a browser to confirm the deployment is alive.
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
